@@ -15,10 +15,16 @@ import requests
 API = "https://stepik.org/api"
 
 
-def get_token(client_id, client_secret):
-    r = requests.post("https://stepik.org/oauth2/token/", data={"grant_type": "client_credentials"},
-                      auth=(client_id, client_secret), timeout=30)
-    r.raise_for_status()
+def get_token(client_id, client_secret, username=None, password=None):
+    """Stepik OAuth токені. Логин/құпиясөз берілсе — password grant (жабық курстар үшін керек):
+    қосымшаның Authorization grant type = Password болуы тиіс."""
+    if username and password:
+        data = {"grant_type": "password", "username": username, "password": password}
+    else:
+        data = {"grant_type": "client_credentials"}
+    r = requests.post("https://stepik.org/oauth2/token/", data=data, auth=(client_id, client_secret), timeout=30)
+    if r.status_code != 200:
+        raise RuntimeError(f"Stepik OAuth {r.status_code}: {r.text[:200]}")
     return r.json()["access_token"]
 
 
@@ -31,7 +37,17 @@ def _get(path, token, params=None):
 def fetch_lesson(lesson_id, token):
     """Қайтарады: (сабақ атауы, [(type, content, points), ...], ескертулер)"""
     warnings = []
-    lesson = _get(f"lessons/{lesson_id}", token)["lessons"][0]
+    try:
+        lessons = _get(f"lessons/{lesson_id}", token).get("lessons", [])
+    except requests.HTTPError as e:
+        lessons = []
+        if e.response is not None and e.response.status_code not in (403, 404):
+            raise
+    if not lessons:
+        raise RuntimeError("Stepik сабақты бермеді: курс жабық. Stepik логині мен құпиясөзін енгізіңіз "
+                           "(қосымша түрі — Password). / Stepik не отдал урок: курс закрыт. Укажите логин и "
+                           "пароль Stepik (тип приложения — Password).")
+    lesson = lessons[0]
     step_ids = lesson.get("steps", [])
     steps_meta = {}
     if step_ids:
@@ -93,7 +109,7 @@ def convert_block(block, cost):
         base.update(answer=ans, tolerance=float(o.get("max_error") or 0))
         return "number", base, cost
 
-    if name == "string":
+    if name == "string" and src.get("pattern"):
         base.update(answers=[src.get("pattern", "")] if src.get("pattern") else [""],
                     case_sensitive=bool(src.get("case_sensitive")), regex=bool(src.get("use_re")))
         return "string", base, cost
@@ -134,6 +150,10 @@ def convert_block(block, cost):
         base.update(text=(text + "\n\n" + joined) if text and joined else (joined or text),
                     case_sensitive=bool(src.get("is_case_sensitive")))
         return "fill_blanks", base, cost
+
+    if name == "string" and not src.get("pattern"):  # тексерушісі жоқ ашық сұрақ
+        base.update(rubric="")
+        return "free_text", base, cost
 
     if name in ("free-answer", "free_answer"):
         base.update(rubric="")

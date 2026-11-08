@@ -632,6 +632,11 @@ def teacher_import(user):
     a, b = st.columns(2)
     client_id = a.text_input("Client ID", value=secret("STEPIK_CLIENT_ID", "") or "")
     client_secret = b.text_input("Client Secret", type="password", value=secret("STEPIK_CLIENT_SECRET", "") or "")
+    c_, d_ = st.columns(2)
+    sp_user = c_.text_input(T("Stepik логині (email) — жабық курс үшін", "Логин Stepik (email) — для закрытого курса"),
+                            value=secret("STEPIK_USERNAME", "") or "")
+    sp_pass = d_.text_input(T("Stepik құпиясөзі", "Пароль Stepik"), type="password",
+                            value=secret("STEPIK_PASSWORD", "") or "")
     chosen = st.multiselect(T("Сабақтар (Stepik ID жазылғандар)", "Уроки (с указанным ID Stepik)"), [l["id"] for l in lessons],
                             default=[l["id"] for l in lessons if not repo.steps(l["id"])],
                             format_func=lambda i: next(f"{title(l)} (#{l['stepik_lesson_id']}) · "
@@ -643,7 +648,7 @@ def teacher_import(user):
         return
     if st.button(T("Импорттау", "Импортировать"), type="primary", disabled=not (client_id and client_secret and chosen)):
         try:
-            token = stepik_import.get_token(client_id, client_secret)
+            token = stepik_import.get_token(client_id, client_secret, sp_user.strip() or None, sp_pass or None)
         except Exception as e:  # noqa: BLE001
             st.error(T("Stepik токенін алу мүмкін болмады: ", "Не удалось получить токен Stepik: ") + str(e))
             return
@@ -715,7 +720,8 @@ def syllabus(user, cls):
     blocks = []
     for mi, m in enumerate(repo.modules(course["id"]), start=1):
         rows, me, mm = [], 0.0, 0.0
-        for li, l in enumerate(repo.lessons(m["id"]), start=1):
+        visible = [l for l in repo.lessons(m["id"]) if repo.steps(l["id"])]  # бос сабақтар оқушыға көрсетілмейді
+        for li, l in enumerate(visible, start=1):
             steps = [s for s in repo.steps(l["id"]) if s["type"] != "text"]
             mx = sum(float(s["points"] or 0) for s in steps)
             earned = sum(scores.get(s["id"], (0, None))[0] for s in steps)
@@ -880,6 +886,12 @@ def admin_codes_page(user):
         st.error(T("Бұл бетке рұқсат жоқ.", "Нет доступа к этой странице."))
         return
     st.header(T("🔐 Мектеп кодтары (әкімші)", "🔐 Коды школ (администратор)"))
+    with st.expander(T("🔄 Курс мазмұнын жаңарту", "🔄 Обновить содержимое курса")):
+        st.caption(T("Бос сабақтарды дайын тапсырмалармен толтырады. Тапсырмасы бар сабақтарға тиіспейді.",
+                     "Заполняет пустые уроки готовыми заданиями. Уроки, где уже есть задания, не изменяются."))
+        if st.button(T("Жаңарту", "Обновить"), key="resync"):
+            n = seed.sync_content()
+            st.success(T(f"Толтырылған сабақтар: {n}", f"Заполнено уроков: {n}"))
     years = schools.academic_years()
     with st.form("gen_codes"):
         st.markdown(T("##### Жаңа код жасау", "##### Создать новый код"))
