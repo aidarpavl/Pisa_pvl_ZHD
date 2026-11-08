@@ -57,23 +57,24 @@ def credentials_email(name, email, password, class_name, app_url, class_link):
     return f"""
     <div style="font-family:Arial,sans-serif;max-width:560px">
       <h2 style="color:#1f7a4d">PISA Жас дарын</h2>
-      <p>Сәлеметсіз бе, <b>{name}</b>!</p>
-      <p>Сіз <b>«{class_name}»</b> сыныбына тіркелдіңіз.</p>
+      <p>Сәлеметсіз бе, <b>{name}</b>! Сіз <b>«{class_name}»</b> сыныбына тіркелдіңіз.<br>
+         <span style="color:#555">Здравствуйте, <b>{name}</b>! Вы зарегистрированы в классе <b>«{class_name}»</b>.</span></p>
       <table style="border-collapse:collapse">
         <tr><td style="padding:4px 12px 4px 0">Логин:</td><td><b>{email}</b></td></tr>
-        <tr><td style="padding:4px 12px 4px 0">Құпиясөз:</td><td><b style="font-size:18px">{password}</b></td></tr>
+        <tr><td style="padding:4px 12px 4px 0">Құпиясөз / Пароль:</td><td><b style="font-size:18px">{password}</b></td></tr>
       </table>
-      <p><a href="{app_url}" style="background:#1f7a4d;color:#fff;padding:10px 18px;border-radius:6px;text-decoration:none">Платформаға кіру</a></p>
-      <p style="color:#666;font-size:13px">Сынып сілтемесі: <a href="{class_link}">{class_link}</a><br>
-      Құпиясөзді кіргеннен кейін «Профиль» бөлімінде өзгерте аласыз.</p>
+      <p><a href="{app_url}" style="background:#1f7a4d;color:#fff;padding:10px 18px;border-radius:6px;text-decoration:none">
+         Платформаға кіру / Войти на платформу</a></p>
+      <p style="color:#666;font-size:13px">Сынып сілтемесі / Ссылка класса: <a href="{class_link}">{class_link}</a><br>
+      Құпиясөзді «Профиль» бөлімінде өзгерте аласыз. / Пароль можно изменить в разделе «Профиль».</p>
     </div>"""
 
 
 def reset_email(name, email, password, app_url):
     return f"""
     <div style="font-family:Arial,sans-serif;max-width:560px">
-      <h2 style="color:#1f7a4d">PISA Жас дарын — жаңа құпиясөз</h2>
-      <p>{name}, сіздің жаңа құпиясөзіңіз:</p>
-      <p>Логин: <b>{email}</b><br>Құпиясөз: <b style="font-size:18px">{password}</b></p>
-      <p><a href="{app_url}">Платформаға кіру</a></p>
+      <h2 style="color:#1f7a4d">PISA Жас дарын — жаңа құпиясөз / новый пароль</h2>
+      <p>{name}</p>
+      <p>Логин: <b>{email}</b><br>Құпиясөз / Пароль: <b style="font-size:18px">{password}</b></p>
+      <p><a href="{app_url}">Платформаға кіру / Войти на платформу</a></p>
     </div>"""

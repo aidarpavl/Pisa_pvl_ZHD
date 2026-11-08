@@ -164,7 +164,50 @@ CREATE TABLE IF NOT EXISTS submissions (
     created_at TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_sub_student ON submissions(student_id, step_id);
+CREATE TABLE IF NOT EXISTS school_codes (
+    id {PK},
+    code TEXT UNIQUE NOT NULL,
+    school_name TEXT NOT NULL,
+    academic_year TEXT,
+    valid_until TEXT NOT NULL,
+    status TEXT DEFAULT 'new',
+    used_by INTEGER,
+    used_at TEXT,
+    created_by INTEGER,
+    created_at TEXT
+);
+CREATE TABLE IF NOT EXISTS ip_log (
+    id {PK},
+    code_id INTEGER NOT NULL REFERENCES school_codes(id) ON DELETE CASCADE,
+    user_id INTEGER,
+    ip TEXT NOT NULL,
+    first_seen TEXT,
+    last_seen TEXT,
+    visits INTEGER DEFAULT 1,
+    UNIQUE (code_id, ip)
+);
+CREATE TABLE IF NOT EXISTS code_attempts (
+    id {PK},
+    user_id INTEGER,
+    at TEXT
+);
 """
+
+
+MIGRATIONS = [
+    "ALTER TABLE courses ADD COLUMN title_ru TEXT",
+    "ALTER TABLE courses ADD COLUMN description_ru TEXT",
+    "ALTER TABLE modules ADD COLUMN title_ru TEXT",
+    "ALTER TABLE lessons ADD COLUMN title_ru TEXT",
+    "ALTER TABLE users ADD COLUMN school_code_id INTEGER",
+    "ALTER TABLE users ADD COLUMN grade TEXT",
+    "ALTER TABLE users ADD COLUMN grade_letter TEXT",
+    "ALTER TABLE users ADD COLUMN birth_date TEXT",
+    "ALTER TABLE users ADD COLUMN phone TEXT",
+    "ALTER TABLE users ADD COLUMN city TEXT",
+    "ALTER TABLE users ADD COLUMN pref_lang TEXT",
+    "ALTER TABLE users ADD COLUMN profile_done INTEGER DEFAULT 0",
+]
 
 
 def init_db():
@@ -173,6 +216,12 @@ def init_db():
         for stmt in SCHEMA.split(";"):
             if stmt.strip():
                 cur.execute(stmt)
+    for stmt in MIGRATIONS:  # бағандар бұрыннан бар болса — елемейміз
+        try:
+            with get_conn() as conn:
+                conn.cursor().execute(stmt)
+        except Exception:
+            pass
 
 
 def dumps(obj):

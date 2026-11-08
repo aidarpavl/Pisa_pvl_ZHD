@@ -12,13 +12,14 @@ def course(cid):
     return db.query_one("SELECT * FROM courses WHERE id=?", (cid,))
 
 
-def create_course(title, description, owner_id):
-    return db.insert("INSERT INTO courses (title, description, owner_id, created_at) VALUES (?,?,?,?)",
-                     (title, description, owner_id, db.now()))
+def create_course(title, description, owner_id, title_ru=None, description_ru=None):
+    return db.insert("INSERT INTO courses (title, description, owner_id, created_at, title_ru, description_ru) "
+                     "VALUES (?,?,?,?,?,?)", (title, description, owner_id, db.now(), title_ru, description_ru))
 
 
-def update_course(cid, title, description):
-    db.execute("UPDATE courses SET title=?, description=? WHERE id=?", (title, description, cid))
+def update_course(cid, title, description, title_ru=None, description_ru=None):
+    db.execute("UPDATE courses SET title=?, description=?, title_ru=?, description_ru=? WHERE id=?",
+               (title, description, title_ru, description_ru, cid))
 
 
 def delete_course(cid):
@@ -31,13 +32,14 @@ def modules(cid):
     return db.query("SELECT * FROM modules WHERE course_id=? ORDER BY position, id", (cid,))
 
 
-def create_module(cid, title):
+def create_module(cid, title, title_ru=None):
     pos = (db.query_one("SELECT COALESCE(MAX(position),0) AS m FROM modules WHERE course_id=?", (cid,)) or {"m": 0})["m"] + 1
-    return db.insert("INSERT INTO modules (course_id, title, position) VALUES (?,?,?)", (cid, title, pos))
+    return db.insert("INSERT INTO modules (course_id, title, position, title_ru) VALUES (?,?,?,?)",
+                     (cid, title, pos, title_ru))
 
 
-def update_module(mid, title):
-    db.execute("UPDATE modules SET title=? WHERE id=?", (title, mid))
+def update_module(mid, title, title_ru=None):
+    db.execute("UPDATE modules SET title=?, title_ru=? WHERE id=?", (title, title_ru, mid))
 
 
 def delete_module(mid):
@@ -56,19 +58,19 @@ def lesson(lid):
 
 def course_lessons(cid):
     return db.query(
-        """SELECT l.*, m.title AS module_title, m.position AS mpos
+        """SELECT l.*, m.title AS module_title, m.title_ru AS module_title_ru, m.position AS mpos
            FROM lessons l JOIN modules m ON m.id=l.module_id
            WHERE m.course_id=? ORDER BY m.position, m.id, l.position, l.id""", (cid,))
 
 
-def create_lesson(mid, title, stepik_id=None):
+def create_lesson(mid, title, stepik_id=None, title_ru=None):
     pos = (db.query_one("SELECT COALESCE(MAX(position),0) AS m FROM lessons WHERE module_id=?", (mid,)) or {"m": 0})["m"] + 1
-    return db.insert("INSERT INTO lessons (module_id, title, position, stepik_lesson_id) VALUES (?,?,?,?)",
-                     (mid, title, pos, stepik_id))
+    return db.insert("INSERT INTO lessons (module_id, title, position, stepik_lesson_id, title_ru) VALUES (?,?,?,?,?)",
+                     (mid, title, pos, stepik_id, title_ru))
 
 
-def update_lesson(lid, title, stepik_id=None):
-    db.execute("UPDATE lessons SET title=?, stepik_lesson_id=? WHERE id=?", (title, stepik_id, lid))
+def update_lesson(lid, title, stepik_id=None, title_ru=None):
+    db.execute("UPDATE lessons SET title=?, stepik_lesson_id=?, title_ru=? WHERE id=?", (title, stepik_id, title_ru, lid))
 
 
 def delete_lesson(lid):
@@ -128,7 +130,7 @@ def lesson_max(lid):
 
 def teacher_classes(tid):
     return db.query(
-        """SELECT c.*, co.title AS course_title,
+        """SELECT c.*, co.title AS course_title, co.title_ru AS course_title_ru,
                   (SELECT COUNT(*) FROM enrollments e WHERE e.class_id=c.id) AS students
            FROM classes c JOIN courses co ON co.id=c.course_id
            WHERE c.teacher_id=? ORDER BY c.id DESC""", (tid,))
@@ -136,13 +138,13 @@ def teacher_classes(tid):
 
 def class_by_code(code):
     return db.query_one(
-        """SELECT c.*, co.title AS course_title, u.name AS teacher_name
+        """SELECT c.*, co.title AS course_title, co.title_ru AS course_title_ru, u.name AS teacher_name
            FROM classes c JOIN courses co ON co.id=c.course_id JOIN users u ON u.id=c.teacher_id
            WHERE upper(c.join_code)=upper(?)""", (code.strip(),))
 
 
 def get_class(class_id):
-    return db.query_one("SELECT c.*, co.title AS course_title FROM classes c JOIN courses co ON co.id=c.course_id WHERE c.id=?",
+    return db.query_one("SELECT c.*, co.title AS course_title, co.title_ru AS course_title_ru FROM classes c JOIN courses co ON co.id=c.course_id WHERE c.id=?",
                         (class_id,))
 
 
@@ -187,7 +189,8 @@ def class_students(class_id):
 
 def student_classes(sid):
     return db.query(
-        """SELECT c.*, co.title AS course_title, u.name AS teacher_name FROM enrollments e
+        """SELECT c.*, co.title AS course_title, co.title_ru AS course_title_ru, u.name AS teacher_name
+           FROM enrollments e
            JOIN classes c ON c.id=e.class_id JOIN courses co ON co.id=c.course_id
            JOIN users u ON u.id=c.teacher_id WHERE e.student_id=? ORDER BY c.id DESC""", (sid,))
 
@@ -231,7 +234,7 @@ def class_scores(class_id):
 def pending_reviews(class_id):
     return db.query(
         """SELECT s.*, u.name AS student_name, st.content AS step_content, st.points AS step_points,
-                  l.title AS lesson_title
+                  l.title AS lesson_title, l.title_ru AS lesson_title_ru
            FROM submissions s JOIN users u ON u.id=s.student_id
            JOIN steps st ON st.id=s.step_id JOIN lessons l ON l.id=st.lesson_id
            WHERE s.class_id=? AND s.status='pending' ORDER BY s.id""", (class_id,))

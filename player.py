@@ -6,6 +6,7 @@ import streamlit as st
 import db
 import grading
 import repo
+from i18n import T, lang, localize
 
 STATUS_ICON = {"correct": "✅", "partial": "🟡", "wrong": "❌", "pending": "⏳", None: "⚪"}
 
@@ -21,19 +22,18 @@ def _shuffled(items, seed):
     return idx
 
 
-def render_inputs(step, key, seed):
+def render_inputs(t, c, key, seed):
     """Тапсырма түріне қарай енгізу виджеттерін көрсетіп, жауапты қайтарады."""
-    t, c = step["type"], step["content"]
-
     if t == "choice":
         opts = c.get("options", [])
         order = _shuffled(opts, seed) if c.get("shuffle", True) else list(range(len(opts)))
+        label = lambda i: opts[i]["text"] or f"{T('Нұсқа', 'Вариант')} {i + 1}"
         if c.get("multiple"):
-            st.caption("Бірнеше дұрыс жауапты таңдаңыз")
-            return [i for i in order if st.checkbox(opts[i]["text"] or f"Нұсқа {i + 1}", key=f"{key}_o{i}")]
-        st.caption("Бір дұрыс жауапты таңдаңыз")
-        choice = st.radio("Жауап", order, index=None, key=f"{key}_r",
-                          format_func=lambda i: opts[i]["text"] or f"Нұсқа {i + 1}", label_visibility="collapsed")
+            st.caption(T("Бірнеше дұрыс жауапты таңдаңыз", "Выберите несколько правильных ответов"))
+            return [i for i in order if st.checkbox(label(i), key=f"{key}_o{i}")]
+        st.caption(T("Бір дұрыс жауапты таңдаңыз", "Выберите один правильный ответ"))
+        choice = st.radio("answer", order, index=None, key=f"{key}_r", format_func=label,
+                          label_visibility="collapsed")
         return [] if choice is None else [choice]
 
     if t == "table":
@@ -50,10 +50,10 @@ def render_inputs(step, key, seed):
         return ans
 
     if t == "number":
-        return st.text_input("Жауабыңыз (сан)", key=f"{key}_n")
+        return st.text_input(T("Жауабыңыз (сан)", "Ваш ответ (число)"), key=f"{key}_n")
 
     if t == "string":
-        return st.text_input("Жауабыңыз", key=f"{key}_s")
+        return st.text_input(T("Жауабыңыз", "Ваш ответ"), key=f"{key}_s")
 
     if t == "fill_blanks":
         parts = grading.BLANK_RE.split(c.get("text", ""))
@@ -72,7 +72,7 @@ def render_inputs(step, key, seed):
         for i, p in enumerate(pairs):
             a, b = st.columns([1, 1])
             a.markdown(f"**{p['left']}**")
-            v = b.selectbox("сәйкес", options, key=f"{key}_m{i}", label_visibility="collapsed")
+            v = b.selectbox("match", options, key=f"{key}_m{i}", label_visibility="collapsed")
             if v != "—":
                 ans[str(i)] = v
         return ans
@@ -80,29 +80,33 @@ def render_inputs(step, key, seed):
     if t == "sorting":
         items = c.get("items", [])
         order = _shuffled(items, seed)
-        st.caption("Элементтерді дұрыс ретпен орналастырыңыз (1 — бірінші)")
-        st.markdown("Берілген элементтер: " + " · ".join(f"`{items[i]}`" for i in order))
+        st.caption(T("Элементтерді дұрыс ретпен орналастырыңыз (1 — бірінші)",
+                     "Расположите элементы в правильном порядке (1 — первый)"))
+        st.markdown(" · ".join(f"`{items[i]}`" for i in order))
         result = []
         for pos in range(len(items)):
-            v = st.selectbox(f"{pos + 1}-орын", ["—"] + [items[i] for i in order], key=f"{key}_so{pos}")
+            v = st.selectbox(T(f"{pos + 1}-орын", f"Место {pos + 1}"), ["—"] + [items[i] for i in order],
+                             key=f"{key}_so{pos}")
             result.append(None if v == "—" else v)
         return result
 
     if t == "free_text":
-        return st.text_area("Жауабыңыз", height=180, key=f"{key}_f")
+        return st.text_area(T("Жауабыңыз", "Ваш ответ"), height=180, key=f"{key}_f")
 
     return None
 
 
 def render_step(step, user_id=None, class_id=None, preview=False):
     """Бір қадамды көрсету. preview=True — мұғалімнің алдын ала қарауы (журналға жазылмайды)."""
-    t, c = step["type"], step["content"]
-    show_text(c.get("text", "") if t != "fill_blanks" else "")
+    t = step["type"]
+    c = localize(step["content"])
+    if t != "fill_blanks":
+        show_text(c.get("text", ""))
     if t == "text":
         return
 
     pts = float(step.get("points") or 0)
-    key = f"st{step['id']}_{'p' if preview else 'u'}"
+    key = f"st{step['id']}_{lang()}_{'p' if preview else 'u'}"
     seed = (user_id or 0) * 100003 + step["id"]
 
     history = [] if preview else repo.submissions_for(step["id"], user_id, class_id)
@@ -113,52 +117,58 @@ def render_step(step, user_id=None, class_id=None, preview=False):
     used = len(history)
     left = (max_att - used) if max_att else None
 
-    info = f"Балл: **{best:g} / {pts:g}**"
+    info = T("Балл", "Балл") + f": **{best:g} / {pts:g}**"
     if max_att:
-        info += f" · Әрекеттер: {used}/{max_att}"
+        info += " · " + T("Әрекеттер", "Попытки") + f": {used}/{max_att}"
     st.caption(info)
 
-    if solved:
-        st.success(f"Шешілді ✅  {best:g} / {pts:g} балл")
+    def explanation():
         if c.get("explanation"):
-            with st.expander("Түсіндірме"):
+            with st.expander(T("Түсіндірме", "Пояснение")):
                 show_text(c["explanation"])
-        if not st.toggle("Қайта шешу", key=f"{key}_again"):
+
+    if solved:
+        st.success(T("Шешілді ✅", "Решено ✅") + f"  {best:g} / {pts:g} " + T("балл", "балл."))
+        explanation()
+        if not st.toggle(T("Қайта шешу", "Решить снова"), key=f"{key}_again"):
             return
     if pending and not solved:
-        last = history[0]
-        st.info("⏳ Жауабыңыз мұғалімнің тексеруін күтуде.")
-        with st.expander("Жіберген жауабыңыз"):
-            st.write(db.loads(last["answer"], ""))
+        st.info(T("⏳ Жауабыңыз мұғалімнің тексеруін күтуде.", "⏳ Ваш ответ ожидает проверки учителем."))
+        with st.expander(T("Жіберген жауабыңыз", "Ваш ответ")):
+            st.write(db.loads(history[0]["answer"], ""))
         return
     if left is not None and left <= 0 and not solved:
-        st.error(f"Әрекеттер таусылды. Нәтиже: {best:g} / {pts:g}")
-        if c.get("explanation"):
-            with st.expander("Түсіндірме"):
-                show_text(c["explanation"])
+        st.error(T("Әрекеттер таусылды. Нәтиже: ", "Попытки закончились. Результат: ") + f"{best:g} / {pts:g}")
+        explanation()
         return
 
-    answer = render_inputs(step, key, seed)
+    answer = render_inputs(t, c, key, seed)
 
-    if st.button("Жіберу", type="primary", key=f"{key}_send"):
-        score, status, msg = grading.check(t, c, answer, pts)
+    if st.button(T("Жіберу", "Отправить"), type="primary", key=f"{key}_send"):
+        score, status, _ = grading.check(t, c, answer, pts)
         if not preview and user_id and class_id:
             repo.add_submission(step["id"], user_id, class_id, answer, score, pts, status)
-        st.session_state[f"{key}_msg"] = (status, msg, score)
+        st.session_state[f"{key}_msg"] = (status, score)
         st.rerun()
 
     if f"{key}_msg" in st.session_state:
-        status, msg, score = st.session_state[f"{key}_msg"]
-        text = f"{msg}  ({score:g} / {pts:g} балл)"
+        status, score = st.session_state[f"{key}_msg"]
+        msgs = {"correct": T("Дұрыс! 🎉", "Верно! 🎉"),
+                "partial": T("Жартылай дұрыс", "Частично верно"),
+                "pending": T("Жауабыңыз жіберілді. Мұғалім тексергеннен кейін балл қойылады.",
+                             "Ответ отправлен. Балл будет выставлен после проверки учителем."),
+                "wrong": T("Қате. Тағы байқап көріңіз.", "Неверно. Попробуйте ещё раз.")}
+        text = f"{msgs.get(status, msgs['wrong'])}  ({score:g} / {pts:g} {T('балл', 'балл.')})"
         {"correct": st.success, "partial": st.warning, "pending": st.info}.get(status, st.error)(text)
-        if preview and status != "pending":
-            st.caption("Алдын ала қарау режимі — нәтиже журналға жазылмайды.")
+        if preview:
+            st.caption(T("Алдын ала қарау режимі — нәтиже журналға жазылмайды.",
+                         "Режим предпросмотра — результат не записывается в журнал."))
 
 
 def render_lesson(lesson, user_id=None, class_id=None, preview=False):
     steps = repo.steps(lesson["id"])
     if not steps:
-        st.info("Бұл сабақта әзірге тапсырма жоқ.")
+        st.info(T("Бұл сабақта әзірге тапсырма жоқ.", "В этом уроке пока нет заданий."))
         return
     scores = {} if preview else repo.best_scores(user_id, class_id)
     labels = []
@@ -166,16 +176,16 @@ def render_lesson(lesson, user_id=None, class_id=None, preview=False):
         icon = "📄" if s["type"] == "text" else STATUS_ICON[scores.get(s["id"], (0, None))[1]]
         labels.append(f"{icon} {i + 1}")
     k = f"lesson_step_{lesson['id']}_{'p' if preview else 'u'}"
-    idx = st.radio("Қадам", list(range(len(steps))), format_func=lambda i: labels[i], horizontal=True, key=k,
+    idx = st.radio("step", list(range(len(steps))), format_func=lambda i: labels[i], horizontal=True, key=k,
                    label_visibility="collapsed")
     st.divider()
     render_step(steps[idx], user_id, class_id, preview)
     st.divider()
     a, _, b = st.columns([1, 3, 1])
     if idx > 0:
-        a.button("← Алдыңғы", key=f"{k}_prev", on_click=_go, args=(k, idx - 1))
+        a.button(T("← Алдыңғы", "← Назад"), key=f"{k}_prev", on_click=_go, args=(k, idx - 1))
     if idx < len(steps) - 1:
-        b.button("Келесі →", key=f"{k}_next", on_click=_go, args=(k, idx + 1))
+        b.button(T("Келесі →", "Далее →"), key=f"{k}_next", on_click=_go, args=(k, idx + 1))
 
 
 def _go(key, value):
