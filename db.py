@@ -207,6 +207,7 @@ MIGRATIONS = [
     "ALTER TABLE users ADD COLUMN city TEXT",
     "ALTER TABLE users ADD COLUMN pref_lang TEXT",
     "ALTER TABLE users ADD COLUMN profile_done INTEGER DEFAULT 0",
+    "ALTER TABLE users ADD COLUMN last_seen TEXT",
 ]
 
 

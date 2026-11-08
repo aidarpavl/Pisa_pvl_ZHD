@@ -13,6 +13,7 @@ import editor
 import i18n
 import mailer
 import player
+import report
 import repo
 import schools
 import seed
@@ -533,23 +534,64 @@ def build_gradebook(cls, detail=False):
 
 
 def teacher_gradebook(user):
-    st.header(T("📒 Журнал", "📒 Журнал"))
+    st.header(T("📒 Журнал және есеп", "📒 Журнал и отчёт"))
     cls = _class_picker(user, "gb_class")
     if not cls:
         return
-    detail = st.toggle(T("Әр тапсырма бойынша толық", "Подробно по каждому заданию"), key="gb_detail")
-    df, total_max, lessons, lesson_steps = build_gradebook(cls, detail)
-    if df.empty:
+    columns, rows, max_total = report.collect(cls, i18n.lang())
+    started = sum(1 for r in rows if r["total"] > 0)
+    avg = sum(r["total"] for r in rows) / len(rows) if rows else 0
+    m1, m2, m3, m4 = st.columns(4)
+    m1.metric(T("Оқушылар саны", "Учащихся"), len(rows))
+    m2.metric(T("Орындағандар", "Приступили"), started)
+    m3.metric(T("Орташа балл", "Средний балл"), f"{avg:.1f} / {max_total:g}")
+    m4.metric(T("Орташа нәтиже", "Средний результат"), f"{(100 * avg / max_total if max_total else 0):.0f}%")
+
+    st.download_button(T("⬇ Excel есебін жүктеу (табель + жиынтық + оқушылар)",
+                         "⬇ Скачать отчёт Excel (табель + сводка + ученики)"),
+                       report.build_xlsx(cls, user["name"], i18n.lang()), file_name=report.filename(cls),
+                       mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", type="primary")
+    st.caption(T("Есеп әр жүктеген сайын соңғы баллдармен жаңадан құрылады (Stepik gradebook форматы).",
+                 "Отчёт формируется заново при каждой выгрузке с актуальными баллами (формат Stepik gradebook)."))
+    if not rows:
         st.info(T("Сыныпта оқушы жоқ.", "В классе нет учеников."))
         return
-    st.caption(T(f"Курстың жалпы балы: **{total_max:g}**. Әр тапсырма бойынша оқушының ең жоғары нәтижесі есептеледі.",
-                 f"Общий балл курса: **{total_max:g}**. Учитывается лучший результат ученика по каждому заданию."))
-    st.dataframe(df, hide_index=True, use_container_width=True,
-                 column_config={"%": st.column_config.ProgressColumn("%", min_value=0, max_value=100, format="%.0f%%")})
-    buf = io.StringIO()
-    df.to_csv(buf, index=False)
-    st.download_button(T("⬇ CSV жүктеу (Excel-де ашылады)", "⬇ Скачать CSV (открывается в Excel)"),
-                       buf.getvalue().encode("utf-8-sig"), file_name=f"jurnal_{cls['name']}.csv", mime="text/csv")
+
+    tab1, tab2, tab3 = st.tabs([T("📒 Табель", "📒 Табель"), T(f"👥 Оқушылар ({len(rows)})", f"👥 Ученики ({len(rows)})"),
+                                T("📊 Сабақтар бойынша", "📊 По урокам")])
+    with tab1:
+        detail = st.toggle(T("Әр тапсырма бойынша (Q)", "По каждому заданию (Q)"), key="gb_detail", value=True)
+        if detail:
+            df = pd.DataFrame([{T("Оқушы", "Ученик"): r["user"]["name"],
+                                **{c[1]: v for c, v in zip(columns, r["vals"])},
+                                "total": round(r["total"], 2)} for r in rows])
+        else:
+            df, _, _, _ = build_gradebook(cls, False)
+        st.dataframe(df, hide_index=True, use_container_width=True,
+                     column_config={"%": st.column_config.ProgressColumn("%", min_value=0, max_value=100, format="%.0f%%")})
+    with tab2:
+        df2 = pd.DataFrame([{
+            T("Аты-жөні", "ФИО"): r["user"]["name"], "Email": r["user"]["email"],
+            T("Сынып", "Класс"): f"{r['user'].get('grade') or ''}{r['user'].get('grade_letter') or ''}",
+            T("Тіркелген", "Вступил"): (r["joined"] or "")[:16],
+            T("Соңғы белсенділік", "Последняя активность"): (r["last"] or "")[:16],
+            T("Балл", "Балл"): round(r["total"], 2),
+            "%": round(100 * r["total"] / max_total, 1) if max_total else 0} for r in rows])
+        st.dataframe(df2.sort_values(T("Балл", "Балл"), ascending=False), hide_index=True, use_container_width=True,
+                     column_config={"%": st.column_config.ProgressColumn("%", min_value=0, max_value=100, format="%.0f%%")})
+    with tab3:
+        lessons_order = list(dict.fromkeys(c[3] for c in columns))
+        data = []
+        for lt in lessons_order:
+            idx = [i for i, c in enumerate(columns) if c[3] == lt]
+            mx = sum(columns[i][2] for i in idx)
+            sums = [sum(r["vals"][i] for i in idx) for r in rows]
+            a_ = sum(sums) / len(sums)
+            data.append({T("Сабақ", "Урок"): lt, T("Макс.", "Макс."): mx, T("Орташа", "Среднее"): round(a_, 2),
+                         "%": round(100 * a_ / mx, 1) if mx else 0,
+                         T("Толық орындағандар", "Выполнили полностью"): sum(1 for x in sums if mx and x >= mx - 1e-9)})
+        st.dataframe(pd.DataFrame(data), hide_index=True, use_container_width=True,
+                     column_config={"%": st.column_config.ProgressColumn("%", min_value=0, max_value=100, format="%.0f%%")})
 
 
 def teacher_review(user):
@@ -919,6 +961,7 @@ def main():
 
     if not st.session_state.get("ip_logged"):
         schools.log_ip(user, client_ip())
+        db.execute("UPDATE users SET last_seen=? WHERE id=?", (db.now(), user["id"]))
         st.session_state["ip_logged"] = True
 
     with st.sidebar:
