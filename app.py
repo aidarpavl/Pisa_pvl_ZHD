@@ -41,7 +41,8 @@ def _init():
     db.init_db()
     seed.seed_if_empty()
     try:
-        schools.ensure_admins(st.secrets.get("ADMIN_PASSWORD"))
+        schools.ensure_admins(st.secrets.get("ADMIN_PASSWORD"),
+                              force_reset=str(st.secrets.get("ADMIN_PASSWORD_RESET", "")).lower() in ("true", "1", "yes"))
     except Exception:
         pass
     return True
@@ -165,25 +166,72 @@ def login_form(key="login"):
 
 
 def forgot_password_form():
-    with st.expander(T("Құпиясөзді ұмыттыңыз ба?", "Забыли пароль?")):
-        email = st.text_input("Email", key="forgot_email")
-        if st.button(T("Жаңа құпиясөзді поштаға жіберу", "Отправить новый пароль на почту")):
-            user = auth.get_user_by_email(email) if auth.valid_email(email) else None
-            if not mailer.is_configured():
-                st.warning(T("Пошта бапталмаған. Мұғаліміңізге хабарласыңыз — ол құпиясөзді жаңарта алады.",
-                             "Почта не настроена. Обратитесь к учителю — он может обновить пароль."))
-            elif user:
-                pw = auth.generate_password()
-                ok, err = mailer.send_email(user["email"], "PISA Жас дарын — жаңа құпиясөз / новый пароль",
-                                            mailer.reset_email(user["name"], user["email"], pw, APP_URL))
-                if ok:
-                    auth.set_password(user["id"], pw)
-                    st.success(T("Жаңа құпиясөз поштаңызға жіберілді.", "Новый пароль отправлен на вашу почту."))
-                else:
-                    st.error(T("Хат жіберілмеді: ", "Письмо не отправлено: ") + err)
-            else:
-                st.success(T("Егер бұл email тіркелген болса, жаңа құпиясөз жіберілді.",
-                             "Если этот email зарегистрирован, новый пароль отправлен."))
+    with st.expander(T("🔑 Логин немесе құпиясөзді ұмыттыңыз ба?", "🔑 Забыли логин или пароль?")):
+        st.caption(T("Тіркелген email-ді жазыңыз — поштаңызға логиніңіз бен жаңа құпиясөз орнату сілтемесі келеді.",
+                     "Укажите email, с которым регистрировались, — на почту придут ваш логин и ссылка для "
+                     "установки нового пароля."))
+        with st.form("forgot_form", clear_on_submit=False):
+            email = st.text_input("Email", key="forgot_email")
+            sent = st.form_submit_button(T("Поштаға жіберу", "Отправить на почту"))
+        if not sent:
+            return
+        if not auth.valid_email(email):
+            st.error(T("Email дұрыс емес.", "Неверный email."))
+            return
+        if not mailer.is_configured():
+            st.warning(T("Пошта (SMTP) бапталмаған, хат жіберу мүмкін емес. Оқушылар — мұғаліміңізге хабарласыңыз. "
+                         "Әкімші — README-дегі «Әкімшіге қолжетімділікті қалпына келтіру» бөлімін қараңыз.",
+                         "Почта (SMTP) не настроена, отправить письмо невозможно. Ученики — обратитесь к учителю. "
+                         "Администратор — см. раздел README «Восстановление доступа администратора»."))
+            return
+        neutral = T("Егер бұл email тіркелген болса, хат жіберілді. Поштаңызды (және «Спам» папкасын) тексеріңіз.",
+                    "Если этот email зарегистрирован, письмо отправлено. Проверьте почту (и папку «Спам»).")
+        if auth.reset_requests_last_hour(email) >= auth.RESET_PER_HOUR:
+            st.info(neutral)
+            return
+        accounts = schools.accounts_for_email(email)
+        if accounts:
+            token = auth.create_reset_token(email)
+            link = f"{APP_URL}/?reset={token}"
+            ok, err = mailer.send_email(email.strip(), "PISA Жас дарын — логин / құпиясөз (пароль)",
+                                        mailer.reset_link_email(accounts[0]["name"], [u["email"] for u in accounts],
+                                                                link, auth.RESET_TTL_MIN))
+            if not ok:
+                st.error(T("Хат жіберілмеді: ", "Письмо не отправлено: ") + err)
+                return
+        st.success(neutral)
+
+
+def reset_page(token):
+    header_with_lang("📘 PISA Жас дарын")
+    st.subheader(T("🔑 Жаңа құпиясөз орнату", "🔑 Установка нового пароля"))
+    email = auth.check_reset_token(token)
+    if not email:
+        st.error(T("Сілтеме жарамсыз немесе мерзімі өткен. Қайтадан сұраңыз.",
+                   "Ссылка недействительна или устарела. Запросите восстановление ещё раз."))
+        if st.button(T("Басты бетке", "На главную")):
+            st.query_params.clear()
+            st.rerun()
+        return
+    accounts = schools.accounts_for_email(email)
+    st.write(T("Логин(дер):", "Логин(ы):"), ", ".join(f"**{u['email']}**" for u in accounts))
+    with st.form("reset_form"):
+        p1 = st.text_input(T("Жаңа құпиясөз (кемінде 8 таңба)", "Новый пароль (минимум 8 символов)"), type="password")
+        p2 = st.text_input(T("Құпиясөзді қайталаңыз", "Повторите пароль"), type="password")
+        ok = st.form_submit_button(T("Сақтау", "Сохранить"), type="primary")
+    if ok:
+        if len(p1) < 8:
+            st.error(T("Құпиясөз тым қысқа.", "Пароль слишком короткий."))
+        elif p1 != p2:
+            st.error(T("Құпиясөздер сәйкес емес.", "Пароли не совпадают."))
+        else:
+            for u in accounts:
+                auth.set_password(u["id"], p1)
+            auth.use_reset_token(token)
+            st.success(T("Құпиясөз өзгертілді. Енді кіре аласыз.", "Пароль изменён. Теперь можно войти."))
+            if st.button(T("Кіру бетіне", "Перейти ко входу"), type="primary"):
+                st.query_params.clear()
+                st.rerun()
 
 
 def show_credentials_fallback(email, password, err):
@@ -962,6 +1010,10 @@ def admin_codes_page(user):
 # ======================================================================
 
 def main():
+    reset_token = st.query_params.get("reset")
+    if reset_token:
+        reset_page(reset_token)
+        return
     join_code = st.query_params.get("join")
     if join_code:
         join_page(join_code)

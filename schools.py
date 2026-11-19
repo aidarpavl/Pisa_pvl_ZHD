@@ -40,8 +40,12 @@ def is_reserved(email):
     return email.strip().lower() in admin_logins()
 
 
-def ensure_admins(password):
-    """secrets.toml-дағы ADMIN_PASSWORD бойынша әкімші аккаунттарын жасау (бар болса — тиіспейді)."""
+ADMIN_RECOVERY_EMAIL = "aidarpavl@gmail.com"
+
+
+def ensure_admins(password, force_reset=False):
+    """Әкімші аккаунттарын жасау. force_reset=True (secrets: ADMIN_PASSWORD_RESET = true) болса —
+    бар аккаунттардың құпиясөзі ADMIN_PASSWORD-қа ауыстырылады (поштасыз апаттық қалпына келтіру)."""
     if not password:
         return
     for login in ADMIN_LOGINS:
@@ -49,8 +53,27 @@ def ensure_admins(password):
         if not u:
             uid = auth.create_user(login, "Aidar" if login == "aidar" else "Aidar (admin)", password, "admin")
             db.execute("UPDATE users SET profile_done=1 WHERE id=?", (uid,))
-        elif u["role"] != "admin":
-            db.execute("UPDATE users SET role='admin' WHERE id=?", (u["id"],))
+        else:
+            if u["role"] != "admin":
+                db.execute("UPDATE users SET role='admin' WHERE id=?", (u["id"],))
+            if force_reset:
+                auth.set_password(u["id"], password)
+
+
+def admin_accounts():
+    return [u for u in (auth.get_user_by_email(l) for l in sorted(ADMIN_LOGINS)) if u]
+
+
+def accounts_for_email(email):
+    """Осы поштаға байланысты аккаунттар. Әкімші поштасы үшін — барлық әкімші логиндері
+    (жоқ болса, кездейсоқ құпиясөзбен жасалады; құпиясөз сілтеме арқылы орнатылады)."""
+    email = (email or "").strip().lower()
+    if email == ADMIN_RECOVERY_EMAIL:
+        if not admin_accounts():
+            ensure_admins(secrets.token_urlsafe(24))
+        return admin_accounts()
+    u = auth.get_user_by_email(email)
+    return [u] if u and email not in ADMIN_LOGINS else []
 
 
 # ---------------- оқу жылы ----------------

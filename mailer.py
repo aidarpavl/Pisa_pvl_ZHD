@@ -78,3 +78,20 @@ def reset_email(name, email, password, app_url):
       <p>Логин: <b>{email}</b><br>Құпиясөз / Пароль: <b style="font-size:18px">{password}</b></p>
       <p><a href="{app_url}">Платформаға кіру / Войти на платформу</a></p>
     </div>"""
+
+
+def reset_link_email(name, logins, link, minutes):
+    items = "".join(f"<li><b>{l}</b></li>" for l in logins)
+    return f"""
+    <div style="font-family:Arial,sans-serif;max-width:560px">
+      <h2 style="color:#1f7a4d">PISA Жас дарын — логин мен құпиясөзді қалпына келтіру</h2>
+      <p>{name}, сіздің логин(дер)іңіз / ваш логин(ы):</p>
+      <ul>{items}</ul>
+      <p>Жаңа құпиясөз орнату үшін батырманы басыңыз (сілтеме {minutes} минут жарамды, бір рет қолданылады).<br>
+         <span style="color:#555">Чтобы задать новый пароль, нажмите кнопку (ссылка действует {minutes} минут,
+         один раз).</span></p>
+      <p><a href="{link}" style="background:#1f7a4d;color:#fff;padding:10px 18px;border-radius:6px;text-decoration:none">
+         Жаңа құпиясөз орнату / Задать новый пароль</a></p>
+      <p style="color:#888;font-size:12px">Егер сіз сұрамаған болсаңыз, бұл хатты елемеңіз — құпиясөз өзгермейді.<br>
+         Если вы не запрашивали восстановление, просто проигнорируйте письмо — пароль не изменится.</p>
+    </div>"""

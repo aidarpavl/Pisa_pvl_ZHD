@@ -191,6 +191,14 @@ CREATE TABLE IF NOT EXISTS code_attempts (
     user_id INTEGER,
     at TEXT
 );
+CREATE TABLE IF NOT EXISTS password_resets (
+    id {PK},
+    email TEXT NOT NULL,
+    token_hash TEXT NOT NULL,
+    created_at TEXT,
+    expires_at TEXT NOT NULL,
+    used INTEGER DEFAULT 0
+);
 """
 
 
